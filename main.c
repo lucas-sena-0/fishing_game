@@ -1,11 +1,9 @@
-//JOGO DE PESCA
-
+// JOGO DE PESCA - CPUlator / DE1-SoC
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
 #include <stdbool.h>
-#include <string.h>
 
 
 // endereços geal
@@ -18,7 +16,7 @@
 #define WIDTH  320
 #define HEIGHT 240
 
-// cores hexa
+// cores 
 #define BLUE   0x001F 
 #define BLACK  0x0000
 #define WHITE  0xFFFF  
@@ -33,14 +31,14 @@
 #define MAX_PEIXES 5
 #define RAIO_INIMIGO 7  
 #define VELOCIDADE_SUBIDA 3
+#define VELOCIDADE_ANZOL 4
 
-const int ADDR_BUFFER1 = 0xC8000000;
+const int ADDR_BUFFER1 = 0xC8000000; 
 const int ADDR_BUFFER2 = 0xC0000000;
 
 typedef enum { ESTADO_MENU, ESTADO_ARMAZEM, ESTADO_JOGO, ESTADO_SAIR } GameState;
 
 // sprites
-// anzol
 const uint16_t sprite_anzol[16] = {
     0x03C0, 0x03C0, 0x03C0, 0x0180, 
     0x0180, 0x0180, 0x0180, 0x0180, 
@@ -48,13 +46,11 @@ const uint16_t sprite_anzol[16] = {
     0x7980, 0x3F80, 0x1F00, 0x0E00  
 };
 
-// peixe
 const uint16_t sprite_peixe[10] = {
     0x0000, 0x0030, 0x0078, 0x03FC, 0x0FFE, 
     0x3FFF, 0x3FFF, 0x0FFE, 0x03FC, 0x0110  
 };
 
-// mina
 const uint16_t sprite_mina[16] = {
     0x0180, //        XX        
     0x03C0, //       XXXX
@@ -97,7 +93,6 @@ typedef struct {
     bool ativo;
     int old_x[2], old_y[2];
     bool old_ativo[2];
-    int facing_right; 
 } Peixe;
 
 // variáveis globais
@@ -183,16 +178,6 @@ void desenhar_bitmap(int x, int y, const uint16_t *bitmap, int w, int h, uint16_
     }
 }
 
-void desenhar_circulo(int cx, int cy, int r, uint16_t cor) {
-    for (int y = -r; y <= r; y++) {
-        for (int x = -r; x <= r; x++) {
-            if ((x*x) + (y*y) <= (r*r)) {
-                plot_pixel(cx + x, cy + y, cor);
-            }
-        }
-    }
-}
-
 void desenhar_player(Retangulo *p, uint16_t cor_override) {
     uint16_t cor_final = (cor_override == BLUE) ? BLUE : p->cor;
     desenhar_bitmap(p->x, p->y, sprite_anzol, 16, 16, cor_final, 0);
@@ -206,10 +191,151 @@ void desenhar_peixe_sprite(Peixe *p, uint16_t cor_override) {
 
 void desenhar_mina(Inimigo *ini, uint16_t cor_override) {
     uint16_t cor_final = (cor_override == BLUE) ? BLUE : RED;
-    desenhar_bitmap(ini->x - 8, ini->y - 8, sprite_mina, 16, 16, cor_final, 0);
+    for (int dy = -ini->r; dy <= ini->r; dy++) {
+        for (int dx = -ini->r; dx <= ini->r; dx++) {
+            if (dx * dx + dy * dy <= ini->r * ini->r) {
+                plot_pixel(ini->x + dx, ini->y + dy, cor_final);
+            }
+        }
+    }
 }
 
-// verifica se tem colisão com inimigo ou parede se pá
+// limpeza das posições antigas no frame anterior
+void limpar_anzol_frame(Retangulo *anzol, int buf) {
+    Retangulo tmp = *anzol;
+    tmp.x = anzol->old_x[buf];
+    tmp.y = anzol->old_y[buf];
+    desenhar_player(&tmp, BLUE);
+}
+
+void limpar_inimigos_frame(int buf) {
+    for (int i = 0; i < MAX_INIMIGOS; i++) {
+        if (inimigos[i].old_ativo[buf]) {
+            Inimigo tmp = inimigos[i];
+            tmp.x = inimigos[i].old_x[buf];
+            tmp.y = inimigos[i].old_y[buf];
+            desenhar_mina(&tmp, BLUE);
+        }
+    }
+}
+
+void limpar_peixes_frame(int buf) {
+    for (int i = 0; i < MAX_PEIXES; i++) {
+        if (peixes[i].old_ativo[buf]) {
+            Peixe tmp = peixes[i];
+            tmp.x = peixes[i].old_x[buf];
+            tmp.y = peixes[i].old_y[buf];
+            desenhar_peixe_sprite(&tmp, BLUE);
+        }
+    }
+}
+
+// leitura de teclado 
+void ler_teclado_ps2(bool *mov_esq, bool *mov_dir, bool *aguardando_soltar) {
+    while (*ps2_ptr & 0x8000) {
+        uint8_t codigo = *ps2_ptr & 0xFF;
+        if (codigo == 0xF0) {
+            *aguardando_soltar = true;
+        } else {
+            if (*aguardando_soltar) {
+                if (codigo == 0x6B) *mov_esq = false;
+                if (codigo == 0x74) *mov_dir = false;
+                *aguardando_soltar = false;
+            } else {
+                if (codigo == 0x6B) *mov_esq = true;
+                if (codigo == 0x74) *mov_dir = true;
+            }
+        }
+    }
+}
+
+void inicializar_inimigo(Inimigo *ini) {
+    ini->x = (rand() % (WIDTH - 40)) + 20;
+    ini->y = HEIGHT + 20;
+    ini->ativo = true;
+    ini->r = RAIO_INIMIGO;
+}
+
+void mover_inimigo(Inimigo *ini) {
+    ini->y -= VELOCIDADE_SUBIDA;
+}
+
+void tentar_spawn_inimigo(void) {
+    for (int i = 0; i < MAX_INIMIGOS; i++) {
+        if (!inimigos[i].ativo) {
+            inicializar_inimigo(&inimigos[i]);
+            break;
+        }
+    }
+}
+
+void mover_peixe(Peixe *p) {
+    p->y -= VELOCIDADE_SUBIDA;
+    p->x += p->vx;
+    if (p->x <= 0 || p->x + p->w >= WIDTH) p->vx = -p->vx;
+}
+
+void tentar_spawn_peixe(int score) {
+    for (int i = 0; i < MAX_PEIXES; i++) {
+        if (!peixes[i].ativo) {
+            peixes[i].x = (rand() % (WIDTH - 40)) + 20;
+            peixes[i].y = HEIGHT + 20;
+            peixes[i].w = 16; peixes[i].h = 10;
+            peixes[i].vx = (rand() % 2 == 0) ? 2 : -2;
+            peixes[i].ativo = true;
+
+            int chance = rand() % 100;
+            if (score > 3000 && chance < 5) {
+                peixes[i].cor = YELLOW;
+                peixes[i].pontos = 1000;
+                peixes[i].vx *= 3;
+            } else if (score > 1500 && chance < 15) {
+                peixes[i].cor = MAGENTA;
+                peixes[i].pontos = 300;
+                peixes[i].vx *= 2;
+            } else if (score > 500 && chance < 40) {
+                peixes[i].cor = LIME;
+                peixes[i].pontos = 150;
+            } else {
+                peixes[i].cor = WHITE;
+                peixes[i].pontos = 50;
+            }
+            break;
+        }
+    }
+}
+
+void atualizar_inimigos(void) {
+    for (int i = 0; i < MAX_INIMIGOS; i++) {
+        if (inimigos[i].ativo) {
+            mover_inimigo(&inimigos[i]);
+        }
+    }
+}
+
+void atualizar_peixes(void) {
+    for (int i = 0; i < MAX_PEIXES; i++) {
+        if (peixes[i].ativo) {
+            mover_peixe(&peixes[i]);
+        }
+    }
+}
+
+void desenhar_estado(Retangulo *anzol) {
+    desenhar_player(anzol, LIME);
+    for (int i = 0; i < MAX_INIMIGOS; i++) {
+        if (inimigos[i].ativo) {
+            desenhar_mina(&inimigos[i], RED);
+        }
+    }
+    for (int i = 0; i < MAX_PEIXES; i++) {
+        if (peixes[i].ativo) {
+            desenhar_peixe_sprite(&peixes[i], peixes[i].cor);
+        }
+    }
+}
+
+// verifica se tem colisão com inimigo ou parede 
 bool verificar_colisao_inimigo(Retangulo player, Inimigo ini) {
     int testX = ini.x; int testY = ini.y;
     
@@ -265,66 +391,31 @@ void executar_jogo() {
     preencher_tela(BLUE);
     *(pixel_ctrl_ptr + 1) = ADDR_BUFFER2;
     wait_for_vsync();
-    
+
     pixel_buffer_start = ADDR_BUFFER2;
     preencher_tela(BLUE);
     int buffer_index = (pixel_buffer_start == ADDR_BUFFER2) ? 1 : 0;
-    
+
     inicializar_jogo_vars(&anzol, &score, &frame_counter, &timer_pontuacao);
 
     bool rodando = true;
     bool key_left = false, key_right = false, aguardando_soltar = false;
-    int velocidade = 4;
-    
+    const int velocidade = VELOCIDADE_ANZOL;
+
     while (rodando) {
-        Retangulo temp_clean_anzol = anzol;
-        temp_clean_anzol.x = anzol.old_x[buffer_index];
-        temp_clean_anzol.y = anzol.old_y[buffer_index];
-        desenhar_player(&temp_clean_anzol, BLUE); 
+        limpar_anzol_frame(&anzol, buffer_index);
+        limpar_inimigos_frame(buffer_index);
+        limpar_peixes_frame(buffer_index);
 
-        for(int i=0; i<MAX_INIMIGOS; i++) {
-            if(inimigos[i].old_ativo[buffer_index]) {
-                Inimigo temp_clean = inimigos[i];
-                temp_clean.x = inimigos[i].old_x[buffer_index];
-                temp_clean.y = inimigos[i].old_y[buffer_index];
-                desenhar_mina(&temp_clean, BLUE); 
-            }
-        }
-        
-        for(int i=0; i<MAX_PEIXES; i++) {
-            if(peixes[i].old_ativo[buffer_index]) {
-                Peixe temp_clean_peixe = peixes[i];
-                temp_clean_peixe.x = peixes[i].old_x[buffer_index];
-                temp_clean_peixe.y = peixes[i].old_y[buffer_index];
-                desenhar_peixe_sprite(&temp_clean_peixe, BLUE);
-            }
-        }
-
-        // entrada?
-        int PS2_data = *ps2_ptr;
-        int RVALID = PS2_data & 0x8000;
-        while (RVALID) {
-            unsigned char code = PS2_data & 0xFF;
-            if (code == 0xF0) aguardando_soltar = true;
-            else if (code != 0xE0) {
-                if (aguardando_soltar) {
-                    if (code == 0x6B) key_left = false;
-                    if (code == 0x74) key_right = false;
-                    aguardando_soltar = false;
-                } else {
-                    if (code == 0x6B) key_left = true;
-                    if (code == 0x74) key_right = true;
-                }
-            }
-            PS2_data = *ps2_ptr;
-            RVALID = PS2_data & 0x8000;
-        }
-
+        ler_teclado_ps2(&key_left, &key_right, &aguardando_soltar);
         if (*key_ptr & 0x01) rodando = false;
-        
+
         timer_pontuacao++;
-        if (timer_pontuacao >= 30) { score++; atualizar_display(score);
-        timer_pontuacao = 0; }
+        if (timer_pontuacao >= 30) {
+            score++;
+            atualizar_display(score);
+            timer_pontuacao = 0;
+        }
 
         if (key_left) anzol.x -= velocidade;
         if (key_right) anzol.x += velocidade;
@@ -332,93 +423,50 @@ void executar_jogo() {
         if (anzol.x + anzol.w >= WIDTH) anzol.x = WIDTH - anzol.w;
 
         frame_counter++;
-        if (frame_counter > 20) { //contagem de framess
+        if (frame_counter > 20) {
             frame_counter = 0;
-            // Spawna o inimigo
-            for(int i=0; i<MAX_INIMIGOS; i++) if(!inimigos[i].ativo) {
-                inimigos[i].x = (rand()%(WIDTH-40))+20;
-                inimigos[i].y = HEIGHT+20; 
-                inimigos[i].ativo = true; 
-                inimigos[i].r = RAIO_INIMIGO; 
-                break;
-            }
-            // Spawna peixes
+            tentar_spawn_inimigo();
             if (rand() % 3 == 0) {
-                for(int i=0; i<MAX_PEIXES; i++) if(!peixes[i].ativo) {
-                    peixes[i].x = (rand()%(WIDTH-40))+20;
-                    peixes[i].y = HEIGHT+20; 
-                    peixes[i].w = 16; peixes[i].h = 10; 
-                    peixes[i].vx = (rand()%2==0)?2:-2; 
-                    peixes[i].ativo = true;
-                    
-                    int chance = rand() % 100;
-                    if (score > 3000 && chance < 5) { 
-                        peixes[i].cor = YELLOW; 
-                        peixes[i].pontos = 1000; 
-                        peixes[i].vx *= 3;
-                    }
-                    else if (score > 1500 && chance < 15) { 
-                        peixes[i].cor = MAGENTA; 
-                        peixes[i].pontos = 300; 
-                        peixes[i].vx *= 2; 
-                    }
-                    else if (score > 500 && chance < 40) { 
-                        peixes[i].cor = LIME; 
-                        peixes[i].pontos = 150; 
-                    }
-                    else { 
-                        peixes[i].cor = WHITE; 
-                        peixes[i].pontos = 50; 
-                    }
-                    break;
-                }
+                tentar_spawn_peixe(score);
             }
         }
 
-        // movimentação inimigos
-        for(int i=0; i<MAX_INIMIGOS; i++) if(inimigos[i].ativo) {
-            inimigos[i].y -= VELOCIDADE_SUBIDA;
-            if (verificar_colisao_inimigo(anzol, inimigos[i])) { 
-                preencher_tela(RED); 
-                wait_for_vsync(); preencher_tela(BLUE); 
-                rodando = false; 
+        atualizar_inimigos();
+        for (int i = 0; i < MAX_INIMIGOS; i++) {
+            if (inimigos[i].ativo && verificar_colisao_inimigo(anzol, inimigos[i])) {
+                preencher_tela(RED);
+                wait_for_vsync();
+                preencher_tela(BLUE);
+                rodando = false;
             }
-            if (inimigos[i].y < -20) inimigos[i].ativo = false;
+            if (inimigos[i].ativo && inimigos[i].y < -20) inimigos[i].ativo = false;
         }
 
-        // movimentação peixes
-        for(int i=0; i<MAX_PEIXES; i++) if(peixes[i].ativo) {
-            peixes[i].y -= VELOCIDADE_SUBIDA;
-            peixes[i].x += peixes[i].vx;
-            if (peixes[i].x <= 0 || peixes[i].x + peixes[i].w >= WIDTH) peixes[i].vx = -peixes[i].vx;
-            
-            if (verificar_colisao_peixe(anzol, peixes[i])) { 
-                score += peixes[i].pontos; 
-                atualizar_display(score); 
+        atualizar_peixes();
+        for (int i = 0; i < MAX_PEIXES; i++) {
+            if (peixes[i].ativo && verificar_colisao_peixe(anzol, peixes[i])) {
+                score += peixes[i].pontos;
+                atualizar_display(score);
                 peixes[i].ativo = false;
             }
-            if (peixes[i].y < -20) peixes[i].ativo = false;
+            if (peixes[i].ativo && peixes[i].y < -20) peixes[i].ativo = false;
         }
 
-        desenhar_player(&anzol, 0);
-        anzol.old_x[buffer_index] = anzol.x; 
+        desenhar_estado(&anzol);
+        anzol.old_x[buffer_index] = anzol.x;
         anzol.old_y[buffer_index] = anzol.y;
 
-        for(int i=0; i<MAX_INIMIGOS; i++) if(inimigos[i].ativo) {
-            desenhar_mina(&inimigos[i], 0); 
-            inimigos[i].old_x[buffer_index] = inimigos[i].x; 
-            inimigos[i].old_y[buffer_index] = inimigos[i].y; 
-            inimigos[i].old_ativo[buffer_index] = true;
-        } else inimigos[i].old_ativo[buffer_index] = false;
+        for (int i = 0; i < MAX_INIMIGOS; i++) {
+            inimigos[i].old_x[buffer_index] = inimigos[i].x;
+            inimigos[i].old_y[buffer_index] = inimigos[i].y;
+            inimigos[i].old_ativo[buffer_index] = inimigos[i].ativo;
+        }
+        for (int i = 0; i < MAX_PEIXES; i++) {
+            peixes[i].old_x[buffer_index] = peixes[i].x;
+            peixes[i].old_y[buffer_index] = peixes[i].y;
+            peixes[i].old_ativo[buffer_index] = peixes[i].ativo;
+        }
 
-        for(int i=0; i<MAX_PEIXES; i++) if(peixes[i].ativo) {
-            desenhar_peixe_sprite(&peixes[i], 0);
-            peixes[i].old_x[buffer_index] = peixes[i].x; 
-            peixes[i].old_y[buffer_index] = peixes[i].y; 
-            peixes[i].old_ativo[buffer_index] = true;
-        } else peixes[i].old_ativo[buffer_index] = false;
-
-        // espera para treocar de tela
         wait_for_vsync();
         pixel_buffer_start = *(pixel_ctrl_ptr + 1);
         buffer_index = (pixel_buffer_start == ADDR_BUFFER2) ? 1 : 0;
