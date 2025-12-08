@@ -1,15 +1,14 @@
-/*
- * JOGO DE PESCA - VERSÃO VISUAL PREMIUM (MINA GORDINHA)
- * Atualizações: 
- * - Sprite da Mina alterado para parecer uma esfera de ferro pesada
- */
+//JOGO DE PESCA
+
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
 
-// --- ENDEREÇOS ---
+
+// endereços geal
 #define PIXEL_BUF_CTRL_BASE 0xFF203020
 #define PS2_DATA_REG        0xFF200100
 #define HEX3_HEX0_BASE      0xFF200020
@@ -19,17 +18,17 @@
 #define WIDTH  320
 #define HEIGHT 240
 
-// --- CORES ---
-#define BLUE   0x001F  // Fundo
+// cores hexa
+#define BLUE   0x001F 
 #define BLACK  0x0000
-#define WHITE  0xFFFF  // Peixe Comum
-#define RED    0xF800  // Minas
-#define LIME   0x07E0  // Peixe Médio
-#define MAGENTA 0xF81F // Peixe Raro
-#define YELLOW 0xFFE0  // Peixe Lendário
-#define ORANGE 0xFD20  // Skin Neon
+#define WHITE  0xFFFF  
+#define RED    0xF800 
+#define LIME   0x07E0
+#define MAGENTA 0xF81F
+#define YELLOW 0xFFE0
+#define ORANGE 0xFD20
 
-// --- CONFIG ---
+// configurações jogo
 #define MAX_INIMIGOS 6
 #define MAX_PEIXES 5
 #define RAIO_INIMIGO 7  
@@ -40,9 +39,8 @@ const int ADDR_BUFFER2 = 0xC0000000;
 
 typedef enum { ESTADO_MENU, ESTADO_ARMAZEM, ESTADO_JOGO, ESTADO_SAIR } GameState;
 
-// --- BITMAPS (SPRITES) ---
-
-// SPRITE ANZOL (16x16)
+// sprites
+// anzol
 const uint16_t sprite_anzol[16] = {
     0x03C0, 0x03C0, 0x03C0, 0x0180, 
     0x0180, 0x0180, 0x0180, 0x0180, 
@@ -50,23 +48,22 @@ const uint16_t sprite_anzol[16] = {
     0x7980, 0x3F80, 0x1F00, 0x0E00  
 };
 
-// SPRITE PEIXE (16x10)
+// peixe
 const uint16_t sprite_peixe[10] = {
     0x0000, 0x0030, 0x0078, 0x03FC, 0x0FFE, 
     0x3FFF, 0x3FFF, 0x0FFE, 0x03FC, 0x0110  
 };
 
-// NOVO SPRITE MINA "GORDINHA" (16x16)
-// Uma esfera sólida ocupando quase todo o espaço, com pinos curtos.
+// mina
 const uint16_t sprite_mina[16] = {
-    0x0180, //        XX        (Pino Topo)
+    0x0180, //        XX        
     0x03C0, //       XXXX
     0x0FF0, //      XXXXXX
     0x1FF8, //    XXXXXXXXX
     0x3FFC, //   XXXXXXXXXX
-    0x7FFE, //  XXXXXXXXXXX     (Corpo gordo)
+    0x7FFE, //  XXXXXXXXXXX     
     0xFFFF, // XXXXXXXXXXXXXX
-    0xFFFF, // XXXXXXXXXXXXXX   (Centro Sólido)
+    0xFFFF, // XXXXXXXXXXXXXX   
     0xFFFF, // XXXXXXXXXXXXXX
     0xFFFF, // XXXXXXXXXXXXXX
     0x7FFE, //  XXXXXXXXXXX
@@ -74,10 +71,10 @@ const uint16_t sprite_mina[16] = {
     0x1FF8, //    XXXXXXXXX
     0x0FF0, //      XXXXXX
     0x03C0, //       XXXX
-    0x0180  //        XX        (Pino Fundo)
+    0x0180  //        XX        
 };
 
-// --- ESTRUTURAS ---
+// structs
 typedef struct {
     int x, y, w, h;
     int old_x[2], old_y[2]; 
@@ -103,7 +100,7 @@ typedef struct {
     int facing_right; 
 } Peixe;
 
-// --- GLOBAIS ---
+// variáveis globais
 volatile int * pixel_ctrl_ptr = (volatile int *) PIXEL_BUF_CTRL_BASE;
 volatile int * ps2_ptr        = (volatile int *) PS2_DATA_REG;
 volatile int * hex3_hex0_ptr  = (volatile int *) HEX3_HEX0_BASE;
@@ -114,7 +111,7 @@ Inimigo inimigos[MAX_INIMIGOS];
 Peixe peixes[MAX_PEIXES];
 int skin_selecionada = 0; 
 
-// --- FUNÇÕES BÁSICAS ---
+// funções
 
 void wait_for_vsync() {
     volatile int * status_ptr = (volatile int *) (PIXEL_BUF_CTRL_BASE + 0xC);
@@ -173,7 +170,6 @@ void atualizar_display(int valor) {
     *hex3_hex0_ptr = hex_code;
 }
 
-// --- DESENHO DE BITMAPS ---
 
 void desenhar_bitmap(int x, int y, const uint16_t *bitmap, int w, int h, uint16_t cor, int flip_x) {
     for (int i = 0; i < h; i++) {
@@ -213,7 +209,7 @@ void desenhar_mina(Inimigo *ini, uint16_t cor_override) {
     desenhar_bitmap(ini->x - 8, ini->y - 8, sprite_mina, 16, 16, cor_final, 0);
 }
 
-// --- COLISÕES ---
+// verifica se tem colisão com inimigo ou parede se pá
 bool verificar_colisao_inimigo(Retangulo player, Inimigo ini) {
     int testX = ini.x; int testY = ini.y;
     
@@ -233,7 +229,7 @@ bool verificar_colisao_peixe(Retangulo p, Peixe f) {
     return true;
 }
 
-// --- INICIALIZAÇÃO DO JOGO ---
+// iniciar o jogo
 void inicializar_jogo_vars(Retangulo *anzol, int *score, int *frame_counter, int *timer_pontuacao) {
     if (skin_selecionada == 0)      anzol->cor = WHITE;
     else if (skin_selecionada == 1) anzol->cor = YELLOW;
@@ -261,7 +257,7 @@ void inicializar_jogo_vars(Retangulo *anzol, int *score, int *frame_counter, int
     atualizar_display(0);
 }
 
-// --- GAMEPLAY ---
+// começa o jogo
 void executar_jogo() {
     Retangulo anzol;
     int score, frame_counter, timer_pontuacao;
@@ -281,7 +277,6 @@ void executar_jogo() {
     int velocidade = 4;
     
     while (rodando) {
-        // --- LIMPEZA ---
         Retangulo temp_clean_anzol = anzol;
         temp_clean_anzol.x = anzol.old_x[buffer_index];
         temp_clean_anzol.y = anzol.old_y[buffer_index];
@@ -305,7 +300,7 @@ void executar_jogo() {
             }
         }
 
-        // --- INPUT ---
+        // entrada?
         int PS2_data = *ps2_ptr;
         int RVALID = PS2_data & 0x8000;
         while (RVALID) {
@@ -327,7 +322,6 @@ void executar_jogo() {
 
         if (*key_ptr & 0x01) rodando = false;
         
-        // --- LÓGICA ---
         timer_pontuacao++;
         if (timer_pontuacao >= 30) { score++; atualizar_display(score);
         timer_pontuacao = 0; }
@@ -338,9 +332,9 @@ void executar_jogo() {
         if (anzol.x + anzol.w >= WIDTH) anzol.x = WIDTH - anzol.w;
 
         frame_counter++;
-        if (frame_counter > 20) { 
+        if (frame_counter > 20) { //contagem de framess
             frame_counter = 0;
-            // Spawn Inimigos
+            // Spawna o inimigo
             for(int i=0; i<MAX_INIMIGOS; i++) if(!inimigos[i].ativo) {
                 inimigos[i].x = (rand()%(WIDTH-40))+20;
                 inimigos[i].y = HEIGHT+20; 
@@ -348,7 +342,7 @@ void executar_jogo() {
                 inimigos[i].r = RAIO_INIMIGO; 
                 break;
             }
-            // Spawn Peixes
+            // Spawna peixes
             if (rand() % 3 == 0) {
                 for(int i=0; i<MAX_PEIXES; i++) if(!peixes[i].ativo) {
                     peixes[i].x = (rand()%(WIDTH-40))+20;
@@ -381,7 +375,7 @@ void executar_jogo() {
             }
         }
 
-        // Movimento Inimigos
+        // movimentação inimigos
         for(int i=0; i<MAX_INIMIGOS; i++) if(inimigos[i].ativo) {
             inimigos[i].y -= VELOCIDADE_SUBIDA;
             if (verificar_colisao_inimigo(anzol, inimigos[i])) { 
@@ -392,7 +386,7 @@ void executar_jogo() {
             if (inimigos[i].y < -20) inimigos[i].ativo = false;
         }
 
-        // Movimento Peixes
+        // movimentação peixes
         for(int i=0; i<MAX_PEIXES; i++) if(peixes[i].ativo) {
             peixes[i].y -= VELOCIDADE_SUBIDA;
             peixes[i].x += peixes[i].vx;
@@ -406,7 +400,6 @@ void executar_jogo() {
             if (peixes[i].y < -20) peixes[i].ativo = false;
         }
 
-        // --- DESENHO ---
         desenhar_player(&anzol, 0);
         anzol.old_x[buffer_index] = anzol.x; 
         anzol.old_y[buffer_index] = anzol.y;
@@ -425,14 +418,14 @@ void executar_jogo() {
             peixes[i].old_ativo[buffer_index] = true;
         } else peixes[i].old_ativo[buffer_index] = false;
 
-        // --- SWAP ---
+        // espera para treocar de tela
         wait_for_vsync();
         pixel_buffer_start = *(pixel_ctrl_ptr + 1);
         buffer_index = (pixel_buffer_start == ADDR_BUFFER2) ? 1 : 0;
     }
 }
 
-// --- MENU ---
+// aqui começa o menu
 GameState executar_menu() {
     preencher_tela(BLACK); 
     wait_for_vsync();
@@ -441,7 +434,7 @@ GameState executar_menu() {
 
     int opcao = 0; 
     int opcao_antiga = -1; 
-
+// opçoes do menu para plotar
     desenhar_texto(32, 10, "== JOGO DE PESCA ==");
     desenhar_texto(37, 20, "INICIAR JOGO");
     desenhar_texto(37, 22, "ARMAZEM");
@@ -468,7 +461,7 @@ GameState executar_menu() {
     }
 }
 
-// --- ARMAZÉM ---
+// armazem para selecionar cor do anzol
 void executar_armazem() {
     preencher_tela(BLACK);
     wait_for_vsync(); preencher_tela(BLACK);
@@ -505,7 +498,6 @@ void executar_armazem() {
     }
 }
 
-// --- MAIN ---
 int main() {
     *(pixel_ctrl_ptr + 1) = ADDR_BUFFER2;
     pixel_buffer_start = ADDR_BUFFER1;
