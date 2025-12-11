@@ -1,57 +1,38 @@
-# fishing_game
-Jogo de Pescaria em C para DE1-SoC.
+# Jogo de Pesca — DE1-SoC (Linux embarcado)
 
-## Compilação
-CPUlator ou via linha de comando:
+Este projeto implementa um jogo de pesca rodando diretamente no hardware da DE1-SoC via Linux embarcado, usando acesso a memória mapeada e double buffering real.
+
+**Arquitetura**
+- **Memória mapeada:** `/dev/mem` para Lightweight Bridge (VGA, HEX, KEY) e SDRAM (framebuffers e buffer de caracteres).
+- **Vídeo:** framebuffer RGB565 320x240 com stride físico de 512; sincronização com `wait_for_vsync()` alternando buffers.
+- **Entrada:** teclado USB (`/dev/input/event0`) e botões KEY0/KEY1.
+
+**Game Loop**
+- **Entrada:** lê teclado e KEYs com debounce nos menus.
+- **Atualização:** movimento do anzol em 4 direções; peixes/minas sobem com velocidade dinâmica proporcional ao placar; colisões (AABB para peixes, círculo-retângulo para minas).
+- **Render:** limpa posições antigas no back-buffer e desenha todas as entidades; troca de buffers em vsync.
+
+**Controles**
+- `W/A/S/D` ou setas: mover o anzol.
+- `Enter`/`KEY0`: confirmar.
+- `ESC`/`Q`/`KEY1`: sair.
+
+**Compilação e Execução (na placa)**
+```bash
+arm-linux-gnueabihf-gcc -O2 De1-Soc.c -o fishing_game -lm
+sudo ./fishing_game
 ```
-gcc -O2 main.c -o fishing_game.elf
-```
 
-ou com arm-altera-eabi-gcc:
-```
-arm-altera-eabi-gcc -Wall -O2 main.c -o fishing_game.elf
-```
+**Dificuldade e Pontuação**
+- Brancos: 50 pts; Verdes: 150 pts (após 500); Magentas: 300 pts e 2x velocidade (após 1500); Amarelos: 1000 pts e 3x velocidade (após 3000).
+- Velocidade vertical cresce com o placar até um teto; spawn acelera junto.
 
-## Estrutura do código (main.c)
-- `HARDWARE`: constantes e funções de I/O (vsync, pixels, texto, entrada, 7-seg)
-- `CORES` e `CONSTANTES`: definições do jogo
-- `ESTRUTURAS`: Retangulo, Inimigo, Peixe
-- `SPRITES`: bitmaps (anzol, peixe, mina)
-- `DESENHO`: renderização de bitmap e círculo
-- `COLISÕES`: verificação de hit
-- `GAMEPLAY`: loop principal, spawn de inimigos/peixes
-- `MENU/ARMAZÉM`: telas iniciais
-- `MAIN`: máquina de estados
+**Funções Principais (De1-Soc.c)**
+- Vídeo: `wait_for_vsync()`, `calcula_endereco()`, `plota_pixel()`, `preencher_tela()`, `colorir_telas()`, `plotar_sprite()`.
+- Entrada: `configurar_terminal_linux()`, `abrir_teclado_usb()`, `atualizar_estado_teclado()`, `le_inpt_menu()`.
+- HUD/UI: `limpar_texto()`, `desenhar_texto()`, `atualizar_display()`.
+- Entidades: `inicializar_inimigo()`, `mover_inimigo()`, `tenta_spawnar_inimigo()`, `mover_peixe()`, `tenta_spawnar_peixe()`.
+- Jogo: `inicializar_jogo_vars()`, `desenhar_player()`, `desenhar_peixe_sprite()`, `desenhar_mina()` (círculo pelo raio), `verificar_colisao_inimigo()`, `verificar_colisao_peixe()`, `desenhar_estado()`, `executar_jogo()`.
+- Estados: `executar_menu()`, `executar_armazem()`, `main()`.
 
-# Jogo de Pesca — CPUlator / DE1-SoC
-
-## Principais funções
-
-- `wait_for_vsync()` — sincroniza o buffer de vídeo (double buffering).
-- `plot_pixel(x, y, cor)` — pinta um pixel no framebuffer ativo.
-- `preencher_tela(cor)` — preenche toda a tela com uma cor.
-- `limpar_texto()` — limpa o buffer de caracteres (texto na tela).
-- `desenhar_texto(x, y, str)` — escreve texto no buffer de caracteres.
-- `ler_botoes()` — lê KEY0/KEY1 com debounce simples.
-- `atualizar_display(valor)` — atualiza os 4 displays de 7 segmentos com o placar.
-- `desenhar_bitmap(x, y, bmp, w, h, cor, flip)` — desenha um bitmap monocromático com cor e flip horizontal.
-- `desenhar_player(p, cor_override)` — desenha o anzol (player).
-- `desenhar_peixe_sprite(p, cor_override)` — desenha um peixe com direção pelo `vx`.
-- `desenhar_mina(ini, cor_override)` — desenha a mina como círculo sólido usando `r`.
-- `limpar_anzol_frame/limpar_inimigos_frame/limpar_peixes_frame(buf)` — apagam as posições antigas no buffer anterior (double buffering).
-- `ler_teclado_ps2(...)` — trata PS/2 (setas esq/dir com press/release).
-- `inicializar_inimigo(ini)` — cria uma mina fora da tela com raio padrão.
-- `mover_inimigo(ini)` — move a mina para cima.
-- `tentar_spawn_inimigo()` — ocupa um slot livre de mina.
-- `mover_peixe(p)` — move peixe para cima e rebate nas bordas.
-- `tentar_spawn_peixe(score)` — cria peixe com cor/pontos/velocidade conforme pontuação.
-- `atualizar_inimigos()` — move todas as minas ativas.
-- `atualizar_peixes()` — move todos os peixes ativos.
-- `desenhar_estado(anzol)` — desenha anzol, minas e peixes atuais.
-- `verificar_colisao_inimigo(player, ini)` — colisão círculo-retângulo (mina vs. anzol).
-- `verificar_colisao_peixe(player, peixe)` — colisão AABB (peixe vs. anzol).
-- `inicializar_jogo_vars(...)` — reseta jogo, placar, buffers e skins.
-- `executar_jogo()` — laço principal: entrada, spawn, movimento, colisão, placar, render e troca de buffer.
-- `executar_menu()` — menu inicial (iniciar, armazém, sair) via KEY1/KEY0.
-- `executar_armazem()` — seleção de skin do anzol via KEY1/KEY0.
-- `main()` — inicializa buffers e roda a máquina de estados (menu → armazém → jogo → sair).
+Arquivos: `De1-Soc.c` (placa, Linux embarcado), `main.c` (CPUlator). Use o arquivo certo para o alvo.
