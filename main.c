@@ -105,9 +105,9 @@ const char seg7_table[] = {0x3F, 0x06, 0x5B, 0x4F, 0x66, 0x6D, 0x7D, 0x07, 0x7F,
 Inimigo inimigos[MAX_INIMIGOS];
 Peixe peixes[MAX_PEIXES];
 int skin_selecionada = 0; 
+static int botoes_prev = 0; // estado anterior para trigger
 
-// funções
-
+// funções estruturais
 void wait_for_vsync() {
     volatile int * status_ptr = (volatile int *) (PIXEL_BUF_CTRL_BASE + 0xC);
     *pixel_ctrl_ptr = 1; 
@@ -148,10 +148,32 @@ void desenhar_texto(int x, int y, char * text) {
 int ler_botoes() {
     int keys = *key_ptr;
     if (keys != 0) {
-        for(volatile int i=0; i<300000; i++); 
+        for (volatile int i = 0; i < 300000; i++); // debounce simples
         return keys;
     }
     return 0;
+}
+
+// Novo: retorna apenas os bits que foram recém-pressionados (trigger)
+int ler_botoes_trigger() {
+    int curr = *key_ptr & 0x03; // KEY0 e KEY1
+    int down = curr & (~botoes_prev);  // borda de subida
+    if (down) {
+        for (volatile int i = 0; i < 300000; i++); // debounce curto
+    }
+    botoes_prev = curr;
+    return down;
+}
+
+void reset_botoes_trigger(void) {
+    botoes_prev = 0;
+}
+
+static void esperar_soltar_key(int mask) {
+    while (*key_ptr & mask) {
+        // espera soltar para não repetir ação
+    }
+    botoes_prev = *key_ptr & 0x03; // alinha estado após soltar (deve ser 0)
 }
 
 void atualizar_display(int valor) {
@@ -249,6 +271,7 @@ void ler_teclado_ps2(bool *mov_esq, bool *mov_dir, bool *aguardando_soltar) {
     }
 }
 
+// funções objetos do jogo
 void inicializar_inimigo(Inimigo *ini) {
     ini->x = (rand() % (WIDTH - 40)) + 20;
     ini->y = HEIGHT + 20;
@@ -479,29 +502,34 @@ GameState executar_menu() {
     wait_for_vsync();
     preencher_tela(BLACK); 
     limpar_texto();
+    reset_botoes_trigger();
 
     int opcao = 0; 
     int opcao_antiga = -1; 
-// opçoes do menu para plotar
     desenhar_texto(32, 10, "== JOGO DE PESCA ==");
-    desenhar_texto(37, 20, "INICIAR JOGO");
+    desenhar_texto(37, 20, "Jogar");
     desenhar_texto(37, 22, "ARMAZEM");
     desenhar_texto(37, 24, "SAIR");
     desenhar_texto(20, 50, "KEY1: Mudar | KEY0: Selecionar");
+
     while (1) {
         if (opcao != opcao_antiga) {
             desenhar_texto(35, 20, " ");
-            desenhar_texto(35, 22, " "); desenhar_texto(35, 24, " ");
+            desenhar_texto(35, 22, " ");
+            desenhar_texto(35, 24, " ");
             if (opcao == 0) desenhar_texto(35, 20, ">");
             if (opcao == 1) desenhar_texto(35, 22, ">");
             if (opcao == 2) desenhar_texto(35, 24, ">");
             opcao_antiga = opcao;
         }
 
-        int keys = ler_botoes();
-        if (keys & 0x02) { opcao++;
-            if (opcao > 2) opcao = 0; }
-        if (keys & 0x01) {
+        int keys = ler_botoes_trigger();
+        if (keys & 0x02) { // KEY1: mudar
+            opcao++;
+            if (opcao > 2) opcao = 0;
+        }
+        if (keys & 0x01) { // KEY0: selecionar
+            esperar_soltar_key(0x01);
             if (opcao == 0) return ESTADO_JOGO;
             if (opcao == 1) return ESTADO_ARMAZEM;
             if (opcao == 2) return ESTADO_SAIR;
@@ -514,6 +542,7 @@ void executar_armazem() {
     preencher_tela(BLACK);
     wait_for_vsync(); preencher_tela(BLACK);
     limpar_texto();
+    reset_botoes_trigger();
     int selecao = skin_selecionada;
     int selecao_antiga = -1;
 
@@ -531,18 +560,24 @@ void executar_armazem() {
     while (1) {
         if (selecao != selecao_antiga) {
             desenhar_texto(12, 20, "   ");
-            desenhar_texto(34, 20, "   "); desenhar_texto(54, 20, "   ");
+            desenhar_texto(34, 20, "   ");
+            desenhar_texto(54, 20, "   ");
             if (selecao == 0) desenhar_texto(12, 20, "[x]");
             if (selecao == 1) desenhar_texto(34, 20, "[x]");
             if (selecao == 2) desenhar_texto(54, 20, "[x]");
             selecao_antiga = selecao;
         }
 
-        int keys = ler_botoes();
-        if (keys & 0x02) { selecao++;
-            if (selecao > 2) selecao = 0; }
-        if (keys & 0x01) { skin_selecionada = selecao;
-            return; }
+        int keys = ler_botoes_trigger();
+        if (keys & 0x02) { // KEY1: mudar
+            selecao++;
+            if (selecao > 2) selecao = 0;
+        }
+        if (keys & 0x01) { // KEY0: confirmar
+            skin_selecionada = selecao;
+            esperar_soltar_key(0x01);
+            return;
+        }
     }
 }
 
